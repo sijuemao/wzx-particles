@@ -353,8 +353,8 @@ colorThemeInput.addEventListener("change", () => {
 
 function classifyGesture(landmarks) {
   const wrist = landmarks[0];
-  const tips = [4, 8, 12, 16, 20].map((index) => landmarks[index]);
-  const bases = [2, 5, 9, 13, 17].map((index) => landmarks[index]);
+  const tips = [8, 12, 16, 20].map((index) => landmarks[index]);
+  const bases = [5, 9, 13, 17].map((index) => landmarks[index]);
   const openness = tips.reduce((sum, tip, index) => {
     const base = bases[index];
     return sum + Math.hypot(tip.x - base.x, tip.y - base.y, tip.z - base.z);
@@ -386,10 +386,10 @@ function onHandResults(results) {
   const now = performance.now();
 
   const openThreshold = isMobile
-    ? Math.max(0.14, 0.26 - state.sensitivity * 0.05)
+    ? Math.max(0.10, 0.20 - state.sensitivity * 0.04)
     : Math.max(0.20, 0.34 - state.sensitivity * 0.05);
   const fistThreshold = isMobile
-    ? Math.min(0.22, 0.10 + state.sensitivity * 0.05)
+    ? Math.min(0.16, 0.07 + state.sensitivity * 0.04)
     : Math.min(0.28, 0.14 + state.sensitivity * 0.06);
 
   if (openness > openThreshold) {
@@ -401,7 +401,7 @@ function onHandResults(results) {
     state.targetSpread = 0.0;
     state.targetShapeMix = 0.0;
   } else {
-    gestureStatus.textContent = "滑动";
+    gestureStatus.textContent = isMobile ? "半开(" + openness.toFixed(2) + ")" : "滑动";
     state.targetSpread = 0.1;
     state.targetShapeMix = 0.25;
   }
