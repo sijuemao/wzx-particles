@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WZX 赛博粒子交互</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://registry.npmmirror.com/three/0.162.0/files/build/three.module.js",
+          "three/addons/": "https://registry.npmmirror.com/three/0.162.0/files/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <canvas id="scene" aria-label="WZX 3D 粒子交互画布"></canvas>
+
+      <section class="hud" id="hud" aria-label="控制面板">
+        <div class="brand">
+          <span class="brand-mark" id="brandMark">WZX</span>
+          <span class="brand-subtitle">赛博粒子场</span>
+          <button class="collapse-button" id="collapseButton" type="button" aria-expanded="true" aria-controls="hudBody">
+            收起
+          </button>
+        </div>
+
+        <div class="hud-body" id="hudBody">
+          <div class="status-grid">
+            <div>
+              <span class="label">摄像头</span>
+              <strong id="cameraStatus">等待授权</strong>
+            </div>
+            <div>
+              <span class="label">手势</span>
+              <strong id="gestureStatus">未检测</strong>
+            </div>
+            <div>
+              <span class="label">惯性</span>
+              <strong id="motionStatus">0.00</strong>
+            </div>
+          </div>
+
+          <div class="controls">
+            <div class="mode-control" aria-label="交互模式">
+              <span>交互模式</span>
+              <div class="mode-toggle" role="radiogroup" aria-label="交互模式">
+                <button class="mode-option is-active" type="button" data-mode="hand" role="radio" aria-checked="true">
+                  手势识别
+                </button>
+                <button class="mode-option" type="button" data-mode="mouse" role="radio" aria-checked="false">
+                  鼠标控制
+                </button>
+              </div>
+            </div>
+            <label class="text-control">
+              <span>字符模型</span>
+              <input id="modelText" type="text" maxlength="8" value="WZX" autocomplete="off" />
+            </label>
+            <label>
+              <span>粒子数量</span>
+              <output id="particleCountValue">9000</output>
+              <input id="particleCount" type="range" min="1500" max="18000" step="500" value="9000" />
+            </label>
+            <label>
+              <span>粒子大小</span>
+              <output id="particleSizeValue">0.030</output>
+              <input id="particleSize" type="range" min="0.012" max="0.075" step="0.003" value="0.03" />
+            </label>
+            <label>
+              <span>灵敏度</span>
+              <output id="sensitivityValue">1.0</output>
+              <input id="sensitivity" type="range" min="0.5" max="3" step="0.1" value="1" />
+            </label>
+            <label class="text-control">
+              <span>颜色类型</span>
+              <select id="colorTheme">
+                <option value="khaki">卡其沙色</option>
+                <option value="sage">灰绿雾感</option>
+                <option value="mist">雾蓝银灰</option>
+                <option value="lavender">淡紫灰</option>
+                <option value="porcelain">瓷白暖灰</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="gesture-row" aria-label="手势提示">
+            <span>张手发散</span>
+            <span>握拳聚拢</span>
+            <span>挥手旋转</span>
+          </div>
+        </div>
+      </section>
+
+      <aside class="camera-panel" aria-label="摄像头预览">
+        <video id="inputVideo" autoplay muted playsinline></video>
+        <canvas id="handOverlay"></canvas>
+      </aside>
+    </main>
+
+    <script src="https://registry.npmmirror.com/@mediapipe/hands/latest/files/hands.js"></script>
+    <script src="https://registry.npmmirror.com/@mediapipe/camera_utils/latest/files/camera_utils.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
