@@ -21,7 +21,10 @@ const sensitivityValue = document.querySelector("#sensitivityValue");
 const hud = document.querySelector("#hud");
 const collapseButton = document.querySelector("#collapseButton");
 const gestureLabels = Array.from(document.querySelectorAll(".gesture-row span"));
-const renderPixelRatio = Math.min(window.devicePixelRatio, 1);
+const isMobile = /Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent)
+  || (navigator.maxTouchPoints > 1 && window.innerWidth < 1024);
+const dprCap = isMobile ? 1 : 1;
+const renderPixelRatio = Math.min(window.devicePixelRatio, dprCap);
 
 const state = {
   particleCount: Number(particleCountInput.value),
@@ -439,8 +442,9 @@ function drawHand(landmarks) {
 
 function resizeOverlay() {
   const rect = overlay.getBoundingClientRect();
-  const width = Math.max(1, Math.round(rect.width * window.devicePixelRatio));
-  const height = Math.max(1, Math.round(rect.height * window.devicePixelRatio));
+  const overlayDpr = Math.min(window.devicePixelRatio, 2);
+  const width = Math.max(1, Math.round(rect.width * overlayDpr));
+  const height = Math.max(1, Math.round(rect.height * overlayDpr));
   if (overlay.width !== width || overlay.height !== height) {
     overlay.width = width;
     overlay.height = height;
@@ -458,13 +462,20 @@ async function startHands() {
   });
   hands.setOptions({
     maxNumHands: 1,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.68,
-    minTrackingConfidence: 0.62
+    modelComplexity: isMobile ? 0 : 1,
+    minDetectionConfidence: isMobile ? 0.62 : 0.68,
+    minTrackingConfidence: isMobile ? 0.55 : 0.62
   });
   hands.onResults(onHandResults);
 
-  const constraints = {
+  const constraints = isMobile ? {
+    video: {
+      facingMode: "user",
+      width: { ideal: 640 },
+      height: { ideal: 480 }
+    },
+    audio: false
+  } : {
     video: {
       width: { ideal: 480 },
       height: { ideal: 360 },
@@ -496,8 +507,22 @@ async function startHands() {
   }
 
   video.srcObject = stream;
-  await video.play();
-  cameraStatus.textContent = "运行中";
+  try {
+    await video.play();
+    cameraStatus.textContent = "运行中";
+  } catch (playError) {
+    console.warn("video.play() 被浏览器拦截，等待用户交互:", playError);
+    cameraStatus.textContent = "点击屏幕启动";
+    const resumePlay = () => {
+      video.play().then(() => {
+        cameraStatus.textContent = "运行中";
+      }).catch(() => {});
+      document.removeEventListener("click", resumePlay);
+      document.removeEventListener("touchend", resumePlay);
+    };
+    document.addEventListener("click", resumePlay);
+    document.addEventListener("touchend", resumePlay);
+  }
 
   let handsBusy = false;
   function processFrame() {
