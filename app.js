@@ -351,8 +351,8 @@ colorThemeInput.addEventListener("change", () => {
 
 function classifyGesture(landmarks) {
   const wrist = landmarks[0];
-  const tips = [8, 12, 16, 20].map((index) => landmarks[index]);
-  const bases = [5, 9, 13, 17].map((index) => landmarks[index]);
+  const tips = [4, 8, 12, 16, 20].map((index) => landmarks[index]);
+  const bases = [2, 5, 9, 13, 17].map((index) => landmarks[index]);
   const openness = tips.reduce((sum, tip, index) => {
     const base = bases[index];
     return sum + Math.hypot(tip.x - base.x, tip.y - base.y, tip.z - base.z);
@@ -371,7 +371,7 @@ function onHandResults(results) {
   }
 
   if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
-    gestureStatus.textContent = "未检测";
+    gestureStatus.textContent = cameraStatus.textContent === "运行中" ? "未检测到手" : "等待摄像头";
     state.targetSpread = 0.0;
     state.targetShapeMix = 0.0;
     state.lastPalmX = null;
@@ -383,8 +383,12 @@ function onHandResults(results) {
   const { openness, palmX } = classifyGesture(landmarks);
   const now = performance.now();
 
-  const openThreshold = Math.max(0.18, 0.32 - state.sensitivity * 0.05);
-  const fistThreshold = Math.min(0.28, 0.14 + state.sensitivity * 0.06);
+  const openThreshold = isMobile
+    ? Math.max(0.14, 0.26 - state.sensitivity * 0.05)
+    : Math.max(0.20, 0.34 - state.sensitivity * 0.05);
+  const fistThreshold = isMobile
+    ? Math.min(0.22, 0.10 + state.sensitivity * 0.05)
+    : Math.min(0.28, 0.14 + state.sensitivity * 0.06);
 
   if (openness > openThreshold) {
     gestureStatus.textContent = "张手";
@@ -457,22 +461,22 @@ async function startHands() {
     return;
   }
 
+  cameraStatus.textContent = "加载模型中";
+
   const hands = new window.Hands({
-    locateFile: (file) => `https://registry.npmmirror.com/@mediapipe/hands/latest/files/${file}`
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
   });
   hands.setOptions({
     maxNumHands: 1,
     modelComplexity: isMobile ? 0 : 1,
-    minDetectionConfidence: isMobile ? 0.62 : 0.68,
-    minTrackingConfidence: isMobile ? 0.55 : 0.62
+    minDetectionConfidence: isMobile ? 0.50 : 0.68,
+    minTrackingConfidence: isMobile ? 0.45 : 0.62
   });
   hands.onResults(onHandResults);
 
   const constraints = isMobile ? {
     video: {
-      facingMode: "user",
-      width: { ideal: 640 },
-      height: { ideal: 480 }
+      facingMode: "user"
     },
     audio: false
   } : {
@@ -501,7 +505,9 @@ async function startHands() {
     } else {
       cameraStatus.textContent = "未授权";
     }
-    gestureStatus.textContent = gestureStatus.textContent === "请用服务器打开" ? gestureStatus.textContent : "鼠标备用";
+    if (gestureStatus.textContent !== "请用服务器打开") {
+      gestureStatus.textContent = "鼠标备用";
+    }
     console.warn("摄像头启动失败:", error);
     return;
   }
@@ -524,7 +530,18 @@ async function startHands() {
     document.addEventListener("touchend", resumePlay);
   }
 
+  await new Promise((resolve) => {
+    if (video.videoWidth > 0) return resolve();
+    const onMeta = () => {
+      video.removeEventListener("loadedmetadata", onMeta);
+      resolve();
+    };
+    video.addEventListener("loadedmetadata", onMeta);
+    setTimeout(resolve, 3000);
+  });
+
   let handsBusy = false;
+  let frameErrors = 0;
   function processFrame() {
     if (video.readyState < 2) {
       requestAnimationFrame(processFrame);
@@ -535,7 +552,14 @@ async function startHands() {
       return;
     }
     handsBusy = true;
-    hands.send({ image: video }).finally(() => {
+    hands.send({ image: video }).catch((err) => {
+      frameErrors++;
+      console.warn("MediaPipe send error:", err.message || err);
+      if (frameErrors > 20) {
+        cameraStatus.textContent = "识别异常";
+        gestureStatus.textContent = "请刷新页面";
+      }
+    }).finally(() => {
       handsBusy = false;
       requestAnimationFrame(processFrame);
     });
