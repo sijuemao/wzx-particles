@@ -4,6 +4,8 @@ const canvas = document.querySelector("#scene");
 const video = document.querySelector("#inputVideo");
 const overlay = document.querySelector("#handOverlay");
 const overlayCtx = overlay.getContext("2d");
+const mpCanvas = document.createElement("canvas");
+const mpCtx = mpCanvas.getContext("2d");
 
 const cameraStatus = document.querySelector("#cameraStatus");
 const gestureStatus = document.querySelector("#gestureStatus");
@@ -551,8 +553,15 @@ async function startHands() {
       requestAnimationFrame(processFrame);
       return;
     }
+    const vw = video.videoWidth || 640;
+    const vh = video.videoHeight || 480;
+    if (mpCanvas.width !== vw || mpCanvas.height !== vh) {
+      mpCanvas.width = vw;
+      mpCanvas.height = vh;
+    }
+    mpCtx.drawImage(video, 0, 0, vw, vh);
     handsBusy = true;
-    hands.send({ image: video }).catch((err) => {
+    hands.send({ image: mpCanvas }).catch((err) => {
       frameErrors++;
       console.warn("MediaPipe send error:", err.message || err);
       if (frameErrors > 20) {
