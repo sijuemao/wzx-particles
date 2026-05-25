@@ -32,7 +32,7 @@ const state = {
   particleCount: Number(particleCountInput.value),
   particleSize: Number(particleSizeInput.value),
   interactionMode: "hand",
-  modelText: modelTextInput.value.trim() || "WZX",
+  modelText: modelTextInput.value.trim() || "亖孒冇",
   sensitivity: Number(sensitivityInput.value),
   colorTheme: colorThemeInput.value,
   spread: 0.0,
@@ -147,7 +147,7 @@ let particleRebuildTimer = 0;
 const hasEmoji = (str) => /\p{Extended_Pictographic}/u.test(str);
 
 function makeLetterTargets(count, rawText) {
-  const text = (rawText || "WZX").trim().slice(0, 12) || "WZX";
+  const text = (rawText || "亖孒冇").trim().slice(0, 12) || "亖孒冇";
   const emoji = hasEmoji(text);
   const width = 1200;
   const height = 440;
@@ -171,14 +171,47 @@ function makeLetterTargets(count, rawText) {
   ctx.fillText(text, width / 2, height / 2 + 16);
 
   const image = ctx.getImageData(0, 0, width, height).data;
-  const pixels = [];
+  let pixels = [];
   const step = emoji ? 2 : 3;
   for (let y = 0; y < height; y += step) {
     for (let x = 0; x < width; x += step) {
       if (image[(y * width + x) * 4] > 40) pixels.push([x, y]);
     }
   }
-  if (!pixels.length && text !== "WZX") return makeLetterTargets(count, "WZX");
+
+  if (emoji && pixels.length) {
+    const gridW = Math.ceil(width / step);
+    const gridH = Math.ceil(height / step);
+    const grid = new Uint8Array(gridW * gridH);
+    for (const [px, py] of pixels) {
+      grid[Math.floor(py / step) * gridW + Math.floor(px / step)] = 1;
+    }
+    for (let gy = 0; gy < gridH; gy++) {
+      let left = -1;
+      let right = -1;
+      for (let gx = 0; gx < gridW; gx++) {
+        if (grid[gy * gridW + gx]) { left = gx; break; }
+      }
+      for (let gx = gridW - 1; gx >= 0; gx--) {
+        if (grid[gy * gridW + gx]) { right = gx; break; }
+      }
+      if (left >= 0 && right > left) {
+        for (let gx = left; gx <= right; gx++) {
+          grid[gy * gridW + gx] = 1;
+        }
+      }
+    }
+    pixels = [];
+    for (let gy = 0; gy < gridH; gy++) {
+      for (let gx = 0; gx < gridW; gx++) {
+        if (grid[gy * gridW + gx]) {
+          pixels.push([gx * step, gy * step]);
+        }
+      }
+    }
+  }
+
+  if (!pixels.length && text !== "亖孒冇") return makeLetterTargets(count, "亖孒冇");
 
   const targets = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
@@ -276,7 +309,7 @@ function updateHudValues() {
   particleCountValue.textContent = String(state.particleCount);
   particleSizeValue.textContent = state.particleSize.toFixed(3);
   sensitivityValue.textContent = state.sensitivity.toFixed(1);
-  brandMark.textContent = state.modelText || "WZX";
+  brandMark.textContent = state.modelText || "亖孒冇";
   particleUniforms.uSize.value = state.particleSize;
 }
 
@@ -326,7 +359,7 @@ modeButtons.forEach((btn) => {
 
 modelTextInput.addEventListener("input", () => {
   window.clearTimeout(textRebuildTimer);
-  const nextText = modelTextInput.value.trim().slice(0, 12) || "WZX";
+  const nextText = modelTextInput.value.trim().slice(0, 12) || "亖孒冇";
   state.modelText = nextText;
   updateHudValues();
   textRebuildTimer = window.setTimeout(() => {
