@@ -404,15 +404,15 @@ function onHandResults(results) {
   const isOpen = curledCount <= 1 && openness > 0.12;
 
   if (isOpen) {
-    gestureStatus.textContent = isMobile ? "张手(" + curledCount + "|" + openness.toFixed(2) + ")" : "张手";
+    gestureStatus.textContent = "张手 " + curledCount + "|" + openness.toFixed(2);
     state.targetSpread = 1.0;
     state.targetShapeMix = 0.55;
   } else if (isFist) {
-    gestureStatus.textContent = isMobile ? "握拳(" + curledCount + "|" + openness.toFixed(2) + ")" : "握拳";
+    gestureStatus.textContent = "握拳 " + curledCount + "|" + openness.toFixed(2);
     state.targetSpread = 0.0;
     state.targetShapeMix = 0.0;
   } else {
-    gestureStatus.textContent = isMobile ? "半开(" + curledCount + "|" + openness.toFixed(2) + ")" : "滑动";
+    gestureStatus.textContent = "半开 " + curledCount + "|" + openness.toFixed(2);
     state.targetSpread = curledCount >= 4 ? 0.0 : 0.3;
     state.targetShapeMix = curledCount >= 4 ? 0.0 : 0.25;
   }
