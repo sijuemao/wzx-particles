@@ -42,11 +42,18 @@ const state = {
   rotationY: 0,
   angularVelocity: 0,
   lastPalmX: null,
+  lastPalmY: null,
   lastGestureTime: 0,
   mouseDown: false,
   mouseStartX: 0,
+  mouseStartY: 0,
   lastMouseX: null,
-  mouseTargetVelocity: 0
+  lastMouseY: null,
+  mouseTargetVelocity: 0,
+  targetOffsetX: 0,
+  targetOffsetY: 0,
+  offsetX: 0,
+  offsetY: 0
 };
 
 const scene = new THREE.Scene();
@@ -186,20 +193,26 @@ function makeLetterTargets(count, rawText) {
     for (const [px, py] of pixels) {
       grid[Math.floor(py / step) * gridW + Math.floor(px / step)] = 1;
     }
-    for (let gy = 0; gy < gridH; gy++) {
-      let left = -1;
-      let right = -1;
-      for (let gx = 0; gx < gridW; gx++) {
-        if (grid[gy * gridW + gx]) { left = gx; break; }
-      }
-      for (let gx = gridW - 1; gx >= 0; gx--) {
-        if (grid[gy * gridW + gx]) { right = gx; break; }
-      }
-      if (left >= 0 && right > left) {
-        for (let gx = left; gx <= right; gx++) {
-          grid[gy * gridW + gx] = 1;
-        }
-      }
+    // Flood fill from edges to mark exterior, remaining empty cells are interior holes
+    const visited = new Uint8Array(gridW * gridH);
+    const queue = [];
+    const enqueue = (gx, gy) => {
+      if (gx < 0 || gx >= gridW || gy < 0 || gy >= gridH) return;
+      const idx = gy * gridW + gx;
+      if (visited[idx] || grid[idx]) return;
+      visited[idx] = 1;
+      queue.push(gx, gy);
+    };
+    for (let gx = 0; gx < gridW; gx++) { enqueue(gx, 0); enqueue(gx, gridH - 1); }
+    for (let gy = 1; gy < gridH - 1; gy++) { enqueue(0, gy); enqueue(gridW - 1, gy); }
+    while (queue.length) {
+      const gy = queue.pop();
+      const gx = queue.pop();
+      enqueue(gx - 1, gy); enqueue(gx + 1, gy);
+      enqueue(gx, gy - 1); enqueue(gx, gy + 1);
+    }
+    for (let i = 0; i < grid.length; i++) {
+      if (!grid[i] && !visited[i]) grid[i] = 1;
     }
     pixels = [];
     for (let gy = 0; gy < gridH; gy++) {
@@ -315,8 +328,8 @@ function updateHudValues() {
 
 function updateModeLabels() {
   const labels = state.interactionMode === "mouse"
-    ? ["左移旋转", "点击聚拢", "松开发散"]
-    : ["张手发散", "握拳聚拢", "挥手旋转"];
+    ? ["拖拽移动", "点击聚拢", "松开发散"]
+    : ["张手发散", "握拳聚拢", "移动定位"];
   gestureLabels.forEach((label, index) => {
     label.textContent = labels[index];
   });
@@ -340,10 +353,14 @@ modeButtons.forEach((btn) => {
     btn.setAttribute("aria-checked", "true");
     state.interactionMode = mode;
     state.lastPalmX = null;
+    state.lastPalmY = null;
     state.lastMouseX = null;
+    state.lastMouseY = null;
     state.mouseTargetVelocity = 0;
     state.mouseDown = false;
     state.angularVelocity *= 0.35;
+    state.targetOffsetX = 0;
+    state.targetOffsetY = 0;
     if (mode === "mouse") {
       gestureStatus.textContent = "鼠标模式";
       state.targetSpread = 1.0;
@@ -416,7 +433,8 @@ function classifyGesture(landmarks) {
   }, 0) / fingerTips.length;
 
   const palmX = (wrist.x + landmarks[5].x + landmarks[17].x) / 3;
-  return { curledCount, openness, palmX };
+  const palmY = (wrist.y + landmarks[5].y + landmarks[17].y) / 3;
+  return { curledCount, openness, palmX, palmY };
 }
 
 function onHandResults(results) {
@@ -424,6 +442,8 @@ function onHandResults(results) {
   overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
   if (state.interactionMode !== "hand") {
+    state.targetOffsetX = 0;
+    state.targetOffsetY = 0;
     return;
   }
 
@@ -431,14 +451,16 @@ function onHandResults(results) {
     gestureStatus.textContent = cameraStatus.textContent === "运行中" ? "未检测到手" : "等待摄像头";
     state.targetSpread = 0.0;
     state.targetShapeMix = 0.0;
+    state.targetOffsetX = 0;
+    state.targetOffsetY = 0;
     state.lastPalmX = null;
+    state.lastPalmY = null;
     return;
   }
 
   const landmarks = results.multiHandLandmarks[0];
   drawHand(landmarks);
-  const { curledCount, openness, palmX } = classifyGesture(landmarks);
-  const now = performance.now();
+  const { curledCount, openness, palmX, palmY } = classifyGesture(landmarks);
 
   const isFist = curledCount >= 3 && openness < 0.22;
   const isOpen = curledCount <= 1 && openness > 0.12;
@@ -457,20 +479,20 @@ function onHandResults(results) {
     state.targetShapeMix = curledCount >= 4 ? 0.0 : 0.25;
   }
 
-  if (state.lastPalmX !== null) {
-    const delta = (state.lastPalmX - palmX) * 56 * state.sensitivity;
-    if (Math.abs(delta) > 0.025 / state.sensitivity && now - state.lastGestureTime > 12) {
-      state.angularVelocity += delta;
-      state.lastGestureTime = now;
-    }
+  const maxOffset = 1.6;
+  const rawX = (palmX - 0.5) * 4.5 * state.sensitivity;
+  const rawY = (0.5 - palmY) * 3.2 * state.sensitivity;
+  const dist = Math.hypot(rawX, rawY);
+  if (dist > maxOffset) {
+    state.targetOffsetX = (rawX / dist) * maxOffset;
+    state.targetOffsetY = (rawY / dist) * maxOffset;
+  } else {
+    state.targetOffsetX = rawX;
+    state.targetOffsetY = rawY;
   }
 
-  const axisOffset = 0.5 - palmX;
-  if (Math.abs(axisOffset) > 0.08) {
-    state.angularVelocity += axisOffset * 0.42 * state.sensitivity;
-  }
-  state.angularVelocity = THREE.MathUtils.clamp(state.angularVelocity, -18 * state.sensitivity, 18 * state.sensitivity);
   state.lastPalmX = palmX;
+  state.lastPalmY = palmY;
 }
 
 function drawHand(landmarks) {
@@ -631,36 +653,53 @@ canvas.addEventListener("pointerdown", (event) => {
   if (state.interactionMode !== "mouse") return;
   state.mouseDown = true;
   state.mouseStartX = event.clientX;
+  state.mouseStartY = event.clientY;
   state.lastMouseX = event.clientX;
+  state.lastMouseY = event.clientY;
   state.targetSpread = 0.0;
   state.targetShapeMix = 0.0;
 });
 
-window.addEventListener("pointerup", (event) => {
+window.addEventListener("pointerup", () => {
   if (state.interactionMode !== "mouse" || !state.mouseDown) return;
   state.mouseDown = false;
-  const delta = event.clientX - state.mouseStartX;
-  state.angularVelocity += delta * 0.018 * state.sensitivity;
-  state.angularVelocity = THREE.MathUtils.clamp(state.angularVelocity, -18 * state.sensitivity, 18 * state.sensitivity);
+  state.lastMouseX = null;
+  state.lastMouseY = null;
+  state.mouseTargetVelocity = 0;
   state.targetSpread = 1.0;
   state.targetShapeMix = 0.55;
-  state.lastMouseX = null;
-  state.mouseTargetVelocity = 0;
+  state.targetOffsetX = 0;
+  state.targetOffsetY = 0;
 });
 
 window.addEventListener("pointermove", (event) => {
   if (state.interactionMode !== "mouse") return;
-  if (state.lastMouseX !== null) {
-    const delta = event.clientX - state.lastMouseX;
-    state.mouseTargetVelocity = THREE.MathUtils.clamp(delta * 1.1 * state.sensitivity, -18 * state.sensitivity, 18 * state.sensitivity);
-  }
   state.lastMouseX = event.clientX;
+  state.lastMouseY = event.clientY;
+  if (state.mouseDown) {
+    const dx = event.clientX - state.mouseStartX;
+    const dy = event.clientY - state.mouseStartY;
+    const maxOffset = 1.6;
+    const rawX = dx * 0.012 * state.sensitivity;
+    const rawY = -dy * 0.012 * state.sensitivity;
+    const dist = Math.hypot(rawX, rawY);
+    if (dist > maxOffset) {
+      state.targetOffsetX = (rawX / dist) * maxOffset;
+      state.targetOffsetY = (rawY / dist) * maxOffset;
+    } else {
+      state.targetOffsetX = rawX;
+      state.targetOffsetY = rawY;
+    }
+  }
 });
 
 window.addEventListener("pointerleave", () => {
   if (state.interactionMode !== "mouse") return;
   state.lastMouseX = null;
+  state.lastMouseY = null;
   state.mouseTargetVelocity = 0;
+  state.targetOffsetX = 0;
+  state.targetOffsetY = 0;
 });
 
 function animate(time) {
@@ -683,7 +722,18 @@ function animate(time) {
   particleUniforms.uSpread.value = state.spread;
   particleUniforms.uShapeMix.value = state.shapeMix;
 
-  group.position.x = 0;
+  const ease = 0.14;
+  state.offsetX += (state.targetOffsetX - state.offsetX) * ease;
+  state.offsetY += (state.targetOffsetY - state.offsetY) * ease;
+  const maxOffset = 1.6;
+  const offDist = Math.hypot(state.offsetX, state.offsetY);
+  if (offDist > maxOffset) {
+    state.offsetX = (state.offsetX / offDist) * maxOffset;
+    state.offsetY = (state.offsetY / offDist) * maxOffset;
+  }
+
+  group.position.x = state.offsetX;
+  group.position.y = state.offsetY;
   group.rotation.y = state.rotationY + Math.sin(seconds * 0.32) * 0.12;
   group.rotation.x = Math.sin(seconds * 0.24) * 0.06;
   motionStatus.textContent = Math.abs(state.angularVelocity).toFixed(2);
