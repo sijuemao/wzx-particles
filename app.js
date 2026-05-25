@@ -23,10 +23,24 @@ const sensitivityValue = document.querySelector("#sensitivityValue");
 const hud = document.querySelector("#hud");
 const collapseButton = document.querySelector("#collapseButton");
 const gestureLabels = Array.from(document.querySelectorAll(".gesture-row span"));
+const drawPanel = document.querySelector("#drawPanel");
+const drawCanvas = document.querySelector("#drawCanvas");
+const drawCtx = drawCanvas.getContext("2d");
+const drawClearBtn = document.querySelector("#drawClearBtn");
+const cameraPanel = document.querySelector(".camera-panel");
+
+let drawTargets = null;
+let drawRebuildTimer = 0;
 const isMobile = /Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent)
   || (navigator.maxTouchPoints > 1 && window.innerWidth < 1024);
 const dprCap = isMobile ? 1 : 1;
 const renderPixelRatio = Math.min(window.devicePixelRatio, dprCap);
+
+// Gesture stability: debounce counters
+let handLostFrames = 0;
+const HAND_LOST_THRESHOLD = 15; // ~250ms before showing "未检测"
+let lastGestureWasOpen = false;
+const OPEN_HYSTERESIS = 0.03; // harder to switch states on borderline readings
 
 const state = {
   particleCount: Number(particleCountInput.value),
@@ -269,7 +283,8 @@ function makeScatterTargets(count) {
 
 function rebuildParticles() {
   const count = state.particleCount;
-  baseTargets = makeLetterTargets(count, state.modelText);
+  const useDraw = state.interactionMode === "draw" && drawTargets;
+  baseTargets = useDraw ? new Float32Array(drawTargets) : makeLetterTargets(count, state.modelText);
   sphereTargets = makeSphereTargets(count);
   scatterTargets = makeScatterTargets(count);
   colors = new Float32Array(count * 3);
@@ -303,8 +318,17 @@ function updateParticleColors(markNeedsUpdate = true) {
   const split = 0.55;
   const count = state.particleCount;
 
+  // Compute Y range from baseTargets for top-to-bottom gradient
+  let minY = Infinity, maxY = -Infinity;
   for (let i = 0; i < count; i++) {
-    const t = i / Math.max(1, count - 1);
+    const y = baseTargets[i * 3 + 1];
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const yRange = maxY - minY || 1;
+
+  for (let i = 0; i < count; i++) {
+    const t = (baseTargets[i * 3 + 1] - minY) / yRange;
     const color = t < split
       ? colorA.clone().lerp(colorB, t / split)
       : colorB.clone().lerp(colorC, (t - split) / (1 - split));
@@ -327,9 +351,14 @@ function updateHudValues() {
 }
 
 function updateModeLabels() {
-  const labels = state.interactionMode === "mouse"
-    ? ["移动跟随", "按住发散", "松开聚拢"]
-    : ["张手发散", "握拳聚拢", "挥手旋转"];
+  let labels;
+  if (state.interactionMode === "draw") {
+    labels = ["画盘创作", "自定义形状", "实时预览"];
+  } else if (state.interactionMode === "mouse") {
+    labels = ["移动跟随", "按住发散", "松开聚拢"];
+  } else {
+    labels = ["张手发散", "握拳聚拢", "挥手旋转"];
+  }
   gestureLabels.forEach((label, index) => {
     label.textContent = labels[index];
   });
@@ -361,20 +390,32 @@ modeButtons.forEach((btn) => {
     state.angularVelocity *= 0.35;
     state.targetOffsetX = 0;
     state.targetOffsetY = 0;
-    if (mode === "mouse") {
-      gestureStatus.textContent = "鼠标模式";
-      state.targetSpread = 0.0;
-      state.targetShapeMix = 0.0;
+    state.targetSpread = 0.0;
+    state.targetShapeMix = 0.0;
+
+    // Toggle panels based on mode
+    const isDraw = mode === "draw";
+    if (isDraw) {
+      drawPanel.classList.add("is-visible");
+      cameraPanel.classList.add("is-hidden");
+      gestureStatus.textContent = "画盘模式";
+      requestAnimationFrame(() => {
+        initDrawCanvas(!drawTargets);
+        rebuildParticles();
+        updateModeLabels();
+      });
     } else {
-      gestureStatus.textContent = "等待手势";
-      state.targetSpread = 0.0;
-      state.targetShapeMix = 0.0;
+      drawPanel.classList.remove("is-visible");
+      cameraPanel.classList.remove("is-hidden");
+      gestureStatus.textContent = mode === "mouse" ? "鼠标模式" : "等待手势";
+      rebuildParticles();
+      updateModeLabels();
     }
-    updateModeLabels();
   });
 });
 
 modelTextInput.addEventListener("input", () => {
+  if (state.interactionMode === "draw") return;
   window.clearTimeout(textRebuildTimer);
   const nextText = modelTextInput.value.trim().slice(0, 12) || "亖孒冇";
   state.modelText = nextText;
@@ -389,7 +430,11 @@ particleCountInput.addEventListener("input", () => {
   state.particleCount = Number(particleCountInput.value);
   updateHudValues();
   particleRebuildTimer = window.setTimeout(() => {
-    rebuildParticles();
+    if (state.interactionMode === "draw" && drawTargets) {
+      drawToTargets();
+    } else {
+      rebuildParticles();
+    }
   }, 140);
 });
 
@@ -448,26 +493,38 @@ function onHandResults(results) {
   }
 
   if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
-    gestureStatus.textContent = cameraStatus.textContent === "运行中" ? "未检测到手" : "等待摄像头";
-    state.targetOffsetX = 0;
-    state.targetOffsetY = 0;
-    state.lastPalmX = null;
-    state.lastPalmY = null;
+    handLostFrames++;
+    if (handLostFrames >= HAND_LOST_THRESHOLD) {
+      gestureStatus.textContent = cameraStatus.textContent === "运行中" ? "未检测到手" : "等待摄像头";
+      // Only reset to center after prolonged loss
+      state.targetOffsetX = 0;
+      state.targetOffsetY = 0;
+    }
+    // Keep last palm position during brief dropouts — don't reset lastPalmX/Y
     return;
   }
 
+  handLostFrames = 0;
   const landmarks = results.multiHandLandmarks[0];
   drawHand(landmarks);
   const { curledCount, openness, palmX, palmY } = classifyGesture(landmarks);
   const now = performance.now();
 
-  const isOpen = curledCount <= 1 && openness > 0.12;
+  // Hysteresis: once open, stay open unless clearly closed; once closed, stay closed unless clearly open
+  let isOpen;
+  if (lastGestureWasOpen) {
+    isOpen = curledCount <= 2 && openness > 0.12 - OPEN_HYSTERESIS;
+  } else {
+    isOpen = curledCount <= 1 && openness > 0.12 + OPEN_HYSTERESIS;
+  }
+  lastGestureWasOpen = isOpen;
+
   if (isOpen) {
-    gestureStatus.textContent = "张手 " + curledCount + "|" + openness.toFixed(2);
+    gestureStatus.textContent = "张手";
     state.targetSpread = 1.0;
     state.targetShapeMix = 0.55;
   } else {
-    gestureStatus.textContent = "握拳 " + curledCount + "|" + openness.toFixed(2);
+    gestureStatus.textContent = "握拳";
     state.targetSpread = 0.0;
     state.targetShapeMix = 0.0;
   }
@@ -706,6 +763,106 @@ window.addEventListener("pointerleave", () => {
   state.targetOffsetY = 0;
 });
 
+function initDrawCanvas(forceClear = false) {
+  const dpr = Math.min(window.devicePixelRatio, 2);
+  const rect = drawPanel.getBoundingClientRect();
+  if (rect.width < 10 || rect.height < 10) return;
+  const w = Math.round(rect.width * dpr);
+  const h = Math.round(rect.height * dpr);
+  const sizeChanged = drawCanvas.width !== w || drawCanvas.height !== h;
+  if (!sizeChanged && !forceClear) return;
+  const oldImage = !forceClear && drawCanvas.width > 0
+    ? drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height) : null;
+  drawCanvas.width = w;
+  drawCanvas.height = h;
+  drawCtx.fillStyle = "#000";
+  drawCtx.fillRect(0, 0, w, h);
+  drawCtx.strokeStyle = "#f3ecd9";
+  drawCtx.lineWidth = Math.max(3, w * 0.025);
+  drawCtx.lineCap = "round";
+  drawCtx.lineJoin = "round";
+  if (oldImage) {
+    try { drawCtx.putImageData(oldImage, 0, 0); } catch (e) {}
+  }
+}
+
+function drawToTargets() {
+  if (drawCanvas.width < 10 || drawCanvas.height < 10) return;
+  if (!drawTargets) drawTargets = new Float32Array();
+  // Sample the visible drawing canvas
+  const image = drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height).data;
+  const w = drawCanvas.width;
+  const h = drawCanvas.height;
+  const step = 2;
+  let pixels = [];
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      if (image[(y * w + x) * 4] > 40) pixels.push([x, y]);
+    }
+  }
+  if (!pixels.length) {
+    drawTargets = null;
+    rebuildParticles();
+    return;
+  }
+  const count = state.particleCount;
+  const targets = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const [px, py] = pixels[(Math.random() * pixels.length) | 0];
+    const jx = (Math.random() - 0.5) * 0.08;
+    const jy = (Math.random() - 0.5) * 0.08;
+    targets[i * 3] = (px / w - 0.5) * 11.4 + jx;
+    targets[i * 3 + 1] = -(py / h - 0.5) * 4.4 + jy;
+    targets[i * 3 + 2] = (Math.random() - 0.5) * 0.9;
+  }
+  drawTargets = targets;
+  rebuildParticles();
+}
+
+let drawDrawing = false;
+drawCanvas.addEventListener("pointerdown", (e) => {
+  if (state.interactionMode !== "draw") return;
+  drawDrawing = true;
+  drawCanvas.setPointerCapture(e.pointerId);
+  const rect = drawCanvas.getBoundingClientRect();
+  const sx = drawCanvas.width / rect.width;
+  const sy = drawCanvas.height / rect.height;
+  const x = (e.clientX - rect.left) * sx;
+  const y = (e.clientY - rect.top) * sy;
+  drawCtx.beginPath();
+  drawCtx.moveTo(x, y);
+});
+
+drawCanvas.addEventListener("pointermove", (e) => {
+  if (state.interactionMode !== "draw" || !drawDrawing) return;
+  const rect = drawCanvas.getBoundingClientRect();
+  const sx = drawCanvas.width / rect.width;
+  const sy = drawCanvas.height / rect.height;
+  const x = (e.clientX - rect.left) * sx;
+  const y = (e.clientY - rect.top) * sy;
+  drawCtx.lineTo(x, y);
+  drawCtx.stroke();
+  drawCtx.beginPath();
+  drawCtx.moveTo(x, y);
+  window.clearTimeout(drawRebuildTimer);
+  drawRebuildTimer = window.setTimeout(drawToTargets, 250);
+});
+
+drawCanvas.addEventListener("pointerup", () => {
+  drawDrawing = false;
+  drawToTargets();
+});
+
+drawCanvas.addEventListener("pointerleave", () => {
+  drawDrawing = false;
+});
+
+drawClearBtn.addEventListener("click", () => {
+  initDrawCanvas(true);
+  drawTargets = null;
+  rebuildParticles();
+});
+
 function animate(time) {
   requestAnimationFrame(animate);
   const seconds = time * 0.001;
@@ -717,6 +874,7 @@ function animate(time) {
   state.shapeMix += (state.targetShapeMix - state.shapeMix) * shapeEase;
   state.rotationY += state.angularVelocity * 0.045;
   state.angularVelocity *= 0.975;
+  if (Math.abs(state.angularVelocity) < 0.20) state.angularVelocity = 0;
 
   particleUniforms.uTime.value = seconds;
   particleUniforms.uSpread.value = state.spread;
@@ -749,6 +907,7 @@ function resize() {
   renderer.setSize(width, height);
   particleUniforms.uPixelRatio.value = renderPixelRatio;
   resizeOverlay();
+  if (state.interactionMode === "draw") initDrawCanvas();
 }
 
 window.addEventListener("resize", resize);

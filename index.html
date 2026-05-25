@@ -53,6 +53,9 @@
                 <button class="mode-option" type="button" data-mode="mouse" role="radio" aria-checked="false">
                   鼠标控制
                 </button>
+                <button class="mode-option" type="button" data-mode="draw" role="radio" aria-checked="false">
+                  画盘
+                </button>
               </div>
             </div>
             <label class="text-control">
@@ -97,6 +100,12 @@
       <aside class="camera-panel" aria-label="摄像头预览">
         <video id="inputVideo" autoplay muted playsinline></video>
         <canvas id="handOverlay"></canvas>
+      </aside>
+
+      <aside class="draw-panel" id="drawPanel" aria-label="画盘">
+        <span class="draw-label">画板创作</span>
+        <canvas id="drawCanvas"></canvas>
+        <button class="draw-clear-btn" id="drawClearBtn" type="button">清除</button>
       </aside>
     </main>
 
