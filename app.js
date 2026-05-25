@@ -393,11 +393,11 @@ function onHandResults(results) {
     : Math.min(0.28, 0.14 + state.sensitivity * 0.06);
 
   if (openness > openThreshold) {
-    gestureStatus.textContent = "张手";
+    gestureStatus.textContent = isMobile ? "张手(" + openness.toFixed(2) + ")" : "张手";
     state.targetSpread = 1.0;
     state.targetShapeMix = 0.55;
   } else if (openness < fistThreshold) {
-    gestureStatus.textContent = "握拳";
+    gestureStatus.textContent = isMobile ? "握拳(" + openness.toFixed(2) + ")" : "握拳";
     state.targetSpread = 0.0;
     state.targetShapeMix = 0.0;
   } else {
@@ -471,8 +471,8 @@ async function startHands() {
   hands.setOptions({
     maxNumHands: 1,
     modelComplexity: isMobile ? 0 : 1,
-    minDetectionConfidence: isMobile ? 0.50 : 0.68,
-    minTrackingConfidence: isMobile ? 0.45 : 0.62
+    minDetectionConfidence: 0.70,
+    minTrackingConfidence: 0.55
   });
   hands.onResults(onHandResults);
 
