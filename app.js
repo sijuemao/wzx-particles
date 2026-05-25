@@ -366,7 +366,7 @@ function updateModeLabels() {
 
 collapseButton.addEventListener("click", () => {
   const collapsed = hud.classList.toggle("is-collapsed");
-  collapseButton.textContent = collapsed ? "展开" : "收起";
+  collapseButton.textContent = collapsed ? "👾" : "收起";
   collapseButton.setAttribute("aria-expanded", String(!collapsed));
 });
 
