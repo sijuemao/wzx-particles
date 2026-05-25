@@ -144,8 +144,11 @@ let phases = new Float32Array();
 let textRebuildTimer = 0;
 let particleRebuildTimer = 0;
 
+const hasEmoji = (str) => /\p{Extended_Pictographic}/u.test(str);
+
 function makeLetterTargets(count, rawText) {
-  const text = (rawText || "WZX").trim().slice(0, 8) || "WZX";
+  const text = (rawText || "WZX").trim().slice(0, 12) || "WZX";
+  const emoji = hasEmoji(text);
   const width = 1200;
   const height = 440;
   const textCanvas = document.createElement("canvas");
@@ -157,17 +160,21 @@ function makeLetterTargets(count, rawText) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#fff";
+  const emojiFonts = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla"';
+  const textFonts = '"Microsoft YaHei", "PingFang SC", Arial, sans-serif';
   let fontSize = 330;
   do {
-    ctx.font = `900 ${fontSize}px "Microsoft YaHei", "PingFang SC", Arial, sans-serif`;
+    const fonts = emoji ? `${emojiFonts}, ${textFonts}` : textFonts;
+    ctx.font = `900 ${fontSize}px ${fonts}`;
     fontSize -= 8;
   } while (ctx.measureText(text).width > width * 0.88 && fontSize > 92);
   ctx.fillText(text, width / 2, height / 2 + 16);
 
   const image = ctx.getImageData(0, 0, width, height).data;
   const pixels = [];
-  for (let y = 0; y < height; y += 3) {
-    for (let x = 0; x < width; x += 3) {
+  const step = emoji ? 2 : 3;
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
       if (image[(y * width + x) * 4] > 40) pixels.push([x, y]);
     }
   }
@@ -319,7 +326,7 @@ modeButtons.forEach((btn) => {
 
 modelTextInput.addEventListener("input", () => {
   window.clearTimeout(textRebuildTimer);
-  const nextText = modelTextInput.value.trim().slice(0, 8) || "WZX";
+  const nextText = modelTextInput.value.trim().slice(0, 12) || "WZX";
   state.modelText = nextText;
   updateHudValues();
   textRebuildTimer = window.setTimeout(() => {
