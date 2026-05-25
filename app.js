@@ -461,14 +461,11 @@ function onHandResults(results) {
   const { curledCount, openness, palmX, palmY } = classifyGesture(landmarks);
   const now = performance.now();
 
-  const isFist = curledCount >= 3 && openness < 0.22;
   const isOpen = curledCount <= 1 && openness > 0.12;
   if (isOpen) {
     gestureStatus.textContent = "张手 " + curledCount + "|" + openness.toFixed(2);
-  } else if (isFist) {
-    gestureStatus.textContent = "握拳 " + curledCount + "|" + openness.toFixed(2);
   } else {
-    gestureStatus.textContent = "半开 " + curledCount + "|" + openness.toFixed(2);
+    gestureStatus.textContent = "握拳 " + curledCount + "|" + openness.toFixed(2);
   }
 
   const maxOffset = 1.6;
@@ -484,8 +481,8 @@ function onHandResults(results) {
   }
 
   if (state.lastPalmX !== null) {
-    const delta = (state.lastPalmX - palmX) * 56 * state.sensitivity;
-    if (Math.abs(delta) > 0.025 / state.sensitivity && now - state.lastGestureTime > 12) {
+    const delta = (state.lastPalmX - palmX) * 50 * state.sensitivity;
+    if (Math.abs(delta) > 0.012 && now - state.lastGestureTime > 10) {
       state.angularVelocity += delta;
       state.lastGestureTime = now;
     }
