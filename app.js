@@ -364,9 +364,9 @@ function updateModeLabels() {
   });
 }
 
-collapseButton.addEventListener("click", () => {
+collapseButton.addEventListener("click", (e) => {
+  e.stopPropagation();
   const collapsed = hud.classList.toggle("is-collapsed");
-  collapseButton.textContent = collapsed ? "👾" : "收起";
   collapseButton.setAttribute("aria-expanded", String(!collapsed));
 });
 
@@ -614,36 +614,60 @@ async function startHands() {
     audio: false
   } : {
     video: {
-      width: { ideal: 480 },
-      height: { ideal: 360 },
+      width: { ideal: 640 },
+      height: { ideal: 480 },
       facingMode: "user"
     },
     audio: false
   };
 
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia(constraints);
-  } catch (error) {
-    const msg = String(error.message || error);
-    if (msg.includes("Requested device not found") || msg.includes("NotFoundError")) {
-      cameraStatus.textContent = "未找到摄像头";
-    } else if (msg.includes("NotAllowedError") || msg.includes("Permission denied")) {
-      cameraStatus.textContent = "权限被拒绝";
-    } else if (msg.includes("NotReadableError") || msg.includes("Could not start")) {
-      cameraStatus.textContent = "摄像头被占用";
-    } else if (window.location.protocol === "file:") {
-      cameraStatus.textContent = "需要HTTP服务";
-      gestureStatus.textContent = "请用服务器打开";
-    } else {
-      cameraStatus.textContent = "未授权";
+  async function obtainStream() {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      const msg = String(error.message || error);
+      if (msg.includes("NotAllowedError") || msg.includes("Permission denied")) {
+        cameraStatus.textContent = "点击启动摄像头";
+        gestureStatus.textContent = "点击屏幕授权相机";
+        // Wait for user gesture, then retry once
+        await new Promise((resolve) => {
+          const retry = () => {
+            document.removeEventListener("click", retry);
+            document.removeEventListener("touchend", retry);
+            resolve();
+          };
+          document.addEventListener("click", retry);
+          document.addEventListener("touchend", retry);
+        });
+        cameraStatus.textContent = "请求摄像头中";
+        try {
+          return await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (e2) {
+          cameraStatus.textContent = "权限被拒绝";
+          gestureStatus.textContent = "鼠标备用";
+          return null;
+        }
+      }
+      if (msg.includes("Requested device not found") || msg.includes("NotFoundError")) {
+        cameraStatus.textContent = "未找到摄像头";
+      } else if (msg.includes("NotReadableError") || msg.includes("Could not start")) {
+        cameraStatus.textContent = "摄像头被占用";
+      } else if (window.location.protocol === "file:") {
+        cameraStatus.textContent = "需要HTTP服务";
+        gestureStatus.textContent = "请用服务器打开";
+      } else {
+        cameraStatus.textContent = "未授权";
+      }
+      if (gestureStatus.textContent !== "请用服务器打开") {
+        gestureStatus.textContent = "鼠标备用";
+      }
+      console.warn("摄像头启动失败:", error);
+      return null;
     }
-    if (gestureStatus.textContent !== "请用服务器打开") {
-      gestureStatus.textContent = "鼠标备用";
-    }
-    console.warn("摄像头启动失败:", error);
-    return;
   }
+
+  const stream = await obtainStream();
+  if (!stream) return;
 
   video.srcObject = stream;
   try {
