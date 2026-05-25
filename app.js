@@ -329,7 +329,7 @@ function updateHudValues() {
 function updateModeLabels() {
   const labels = state.interactionMode === "mouse"
     ? ["拖拽移动", "点击聚拢", "松开发散"]
-    : ["张手发散", "握拳聚拢", "移动定位"];
+    : ["平移跟随", "左右挥转", "范围限制"];
   gestureLabels.forEach((label, index) => {
     label.textContent = labels[index];
   });
@@ -449,8 +449,6 @@ function onHandResults(results) {
 
   if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
     gestureStatus.textContent = cameraStatus.textContent === "运行中" ? "未检测到手" : "等待摄像头";
-    state.targetSpread = 0.0;
-    state.targetShapeMix = 0.0;
     state.targetOffsetX = 0;
     state.targetOffsetY = 0;
     state.lastPalmX = null;
@@ -461,22 +459,16 @@ function onHandResults(results) {
   const landmarks = results.multiHandLandmarks[0];
   drawHand(landmarks);
   const { curledCount, openness, palmX, palmY } = classifyGesture(landmarks);
+  const now = performance.now();
 
   const isFist = curledCount >= 3 && openness < 0.22;
   const isOpen = curledCount <= 1 && openness > 0.12;
-
   if (isOpen) {
     gestureStatus.textContent = "张手 " + curledCount + "|" + openness.toFixed(2);
-    state.targetSpread = 1.0;
-    state.targetShapeMix = 0.55;
   } else if (isFist) {
     gestureStatus.textContent = "握拳 " + curledCount + "|" + openness.toFixed(2);
-    state.targetSpread = 0.0;
-    state.targetShapeMix = 0.0;
   } else {
     gestureStatus.textContent = "半开 " + curledCount + "|" + openness.toFixed(2);
-    state.targetSpread = curledCount >= 4 ? 0.0 : 0.3;
-    state.targetShapeMix = curledCount >= 4 ? 0.0 : 0.25;
   }
 
   const maxOffset = 1.6;
@@ -489,6 +481,14 @@ function onHandResults(results) {
   } else {
     state.targetOffsetX = rawX;
     state.targetOffsetY = rawY;
+  }
+
+  if (state.lastPalmX !== null) {
+    const delta = (state.lastPalmX - palmX) * 56 * state.sensitivity;
+    if (Math.abs(delta) > 0.025 / state.sensitivity && now - state.lastGestureTime > 12) {
+      state.angularVelocity += delta;
+      state.lastGestureTime = now;
+    }
   }
 
   state.lastPalmX = palmX;
