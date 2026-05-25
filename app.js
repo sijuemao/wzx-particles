@@ -328,8 +328,8 @@ function updateHudValues() {
 
 function updateModeLabels() {
   const labels = state.interactionMode === "mouse"
-    ? ["拖拽移动", "点击聚拢", "松开发散"]
-    : ["平移跟随", "左右挥转", "范围限制"];
+    ? ["移动跟随", "按住发散", "松开聚拢"]
+    : ["张手发散", "握拳聚拢", "挥手旋转"];
   gestureLabels.forEach((label, index) => {
     label.textContent = labels[index];
   });
@@ -363,8 +363,8 @@ modeButtons.forEach((btn) => {
     state.targetOffsetY = 0;
     if (mode === "mouse") {
       gestureStatus.textContent = "鼠标模式";
-      state.targetSpread = 1.0;
-      state.targetShapeMix = 0.55;
+      state.targetSpread = 0.0;
+      state.targetShapeMix = 0.0;
     } else {
       gestureStatus.textContent = "等待手势";
       state.targetSpread = 0.0;
@@ -464,8 +464,12 @@ function onHandResults(results) {
   const isOpen = curledCount <= 1 && openness > 0.12;
   if (isOpen) {
     gestureStatus.textContent = "张手 " + curledCount + "|" + openness.toFixed(2);
+    state.targetSpread = 1.0;
+    state.targetShapeMix = 0.55;
   } else {
     gestureStatus.textContent = "握拳 " + curledCount + "|" + openness.toFixed(2);
+    state.targetSpread = 0.0;
+    state.targetShapeMix = 0.0;
   }
 
   const maxOffset = 1.6;
@@ -649,52 +653,55 @@ async function startHands() {
 canvas.addEventListener("pointerdown", (event) => {
   if (state.interactionMode !== "mouse") return;
   state.mouseDown = true;
-  state.mouseStartX = event.clientX;
-  state.mouseStartY = event.clientY;
   state.lastMouseX = event.clientX;
-  state.lastMouseY = event.clientY;
-  state.targetSpread = 0.0;
-  state.targetShapeMix = 0.0;
+  state.targetSpread = 1.0;
+  state.targetShapeMix = 0.55;
 });
 
 window.addEventListener("pointerup", () => {
-  if (state.interactionMode !== "mouse" || !state.mouseDown) return;
+  if (state.interactionMode !== "mouse") return;
   state.mouseDown = false;
   state.lastMouseX = null;
   state.lastMouseY = null;
-  state.mouseTargetVelocity = 0;
-  state.targetSpread = 1.0;
-  state.targetShapeMix = 0.55;
+  state.targetSpread = 0.0;
+  state.targetShapeMix = 0.0;
   state.targetOffsetX = 0;
   state.targetOffsetY = 0;
 });
 
 window.addEventListener("pointermove", (event) => {
   if (state.interactionMode !== "mouse") return;
-  state.lastMouseX = event.clientX;
-  state.lastMouseY = event.clientY;
-  if (state.mouseDown) {
-    const dx = event.clientX - state.mouseStartX;
-    const dy = event.clientY - state.mouseStartY;
-    const maxOffset = 1.6;
-    const rawX = dx * 0.012 * state.sensitivity;
-    const rawY = -dy * 0.012 * state.sensitivity;
-    const dist = Math.hypot(rawX, rawY);
-    if (dist > maxOffset) {
-      state.targetOffsetX = (rawX / dist) * maxOffset;
-      state.targetOffsetY = (rawY / dist) * maxOffset;
-    } else {
-      state.targetOffsetX = rawX;
-      state.targetOffsetY = rawY;
+  const mx = (event.clientX / window.innerWidth - 0.5) * 2;
+  const my = (0.5 - event.clientY / window.innerHeight) * 2;
+  const maxOffset = 1.6;
+  const rawX = mx * maxOffset * state.sensitivity;
+  const rawY = my * maxOffset * state.sensitivity;
+  const dist = Math.hypot(rawX, rawY);
+  if (dist > maxOffset) {
+    state.targetOffsetX = (rawX / dist) * maxOffset;
+    state.targetOffsetY = (rawY / dist) * maxOffset;
+  } else {
+    state.targetOffsetX = rawX;
+    state.targetOffsetY = rawY;
+  }
+  if (state.lastMouseX !== null) {
+    const delta = (state.lastMouseX - event.clientX) * 0.05 * state.sensitivity;
+    if (Math.abs(delta) > 0.2) {
+      state.angularVelocity += delta;
     }
   }
+  state.lastMouseX = event.clientX;
+  state.lastMouseY = event.clientY;
 });
 
 window.addEventListener("pointerleave", () => {
   if (state.interactionMode !== "mouse") return;
+  state.mouseDown = false;
   state.lastMouseX = null;
   state.lastMouseY = null;
   state.mouseTargetVelocity = 0;
+  state.targetSpread = 0.0;
+  state.targetShapeMix = 0.0;
   state.targetOffsetX = 0;
   state.targetOffsetY = 0;
 });
@@ -708,10 +715,6 @@ function animate(time) {
   const shapeEase = hardCompacting ? 0.28 : compacting ? 0.2 : 0.1;
   state.spread += (state.targetSpread - state.spread) * spreadEase;
   state.shapeMix += (state.targetShapeMix - state.shapeMix) * shapeEase;
-  if (state.interactionMode === "mouse") {
-    state.angularVelocity += (state.mouseTargetVelocity - state.angularVelocity) * 0.18;
-    state.mouseTargetVelocity *= 0.92;
-  }
   state.rotationY += state.angularVelocity * 0.045;
   state.angularVelocity *= 0.975;
 
