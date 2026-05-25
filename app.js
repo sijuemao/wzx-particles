@@ -359,7 +359,12 @@ function classifyGesture(landmarks) {
 
   let curledCount = 0;
   for (let i = 0; i < 4; i++) {
-    if (landmarks[fingerTips[i]].y > landmarks[fingerPips[i]].y) {
+    const tip = landmarks[fingerTips[i]];
+    const pip = landmarks[fingerPips[i]];
+    const mcp = landmarks[fingerMcps[i]];
+    const tipToMcp = Math.hypot(tip.x - mcp.x, tip.y - mcp.y);
+    const pipToMcp = Math.hypot(pip.x - mcp.x, pip.y - mcp.y);
+    if (pipToMcp > 0.01 && tipToMcp < pipToMcp * 0.90) {
       curledCount++;
     }
   }
