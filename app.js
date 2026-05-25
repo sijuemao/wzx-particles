@@ -353,15 +353,25 @@ colorThemeInput.addEventListener("change", () => {
 
 function classifyGesture(landmarks) {
   const wrist = landmarks[0];
-  const tips = [8, 12, 16, 20].map((index) => landmarks[index]);
-  const bases = [5, 9, 13, 17].map((index) => landmarks[index]);
-  const openness = tips.reduce((sum, tip, index) => {
-    const base = bases[index];
-    return sum + Math.hypot(tip.x - base.x, tip.y - base.y, tip.z - base.z);
-  }, 0) / tips.length;
+  const fingerTips = [8, 12, 16, 20];
+  const fingerPips = [6, 10, 14, 18];
+  const fingerMcps = [5, 9, 13, 17];
+
+  let curledCount = 0;
+  for (let i = 0; i < 4; i++) {
+    if (landmarks[fingerTips[i]].y > landmarks[fingerPips[i]].y) {
+      curledCount++;
+    }
+  }
+
+  const openness = fingerTips.reduce((sum, tipIdx, i) => {
+    const tip = landmarks[tipIdx];
+    const mcp = landmarks[fingerMcps[i]];
+    return sum + Math.hypot(tip.x - mcp.x, tip.y - mcp.y, tip.z - mcp.z);
+  }, 0) / fingerTips.length;
+
   const palmX = (wrist.x + landmarks[5].x + landmarks[17].x) / 3;
-  const palmY = (wrist.y + landmarks[9].y) / 2;
-  return { openness, palmX, palmY };
+  return { curledCount, openness, palmX };
 }
 
 function onHandResults(results) {
@@ -382,28 +392,24 @@ function onHandResults(results) {
 
   const landmarks = results.multiHandLandmarks[0];
   drawHand(landmarks);
-  const { openness, palmX } = classifyGesture(landmarks);
+  const { curledCount, openness, palmX } = classifyGesture(landmarks);
   const now = performance.now();
 
-  const openThreshold = isMobile
-    ? Math.max(0.10, 0.20 - state.sensitivity * 0.04)
-    : Math.max(0.20, 0.34 - state.sensitivity * 0.05);
-  const fistThreshold = isMobile
-    ? Math.min(0.16, 0.07 + state.sensitivity * 0.04)
-    : Math.min(0.28, 0.14 + state.sensitivity * 0.06);
+  const isFist = curledCount >= 3 && openness < 0.22;
+  const isOpen = curledCount <= 1 && openness > 0.12;
 
-  if (openness > openThreshold) {
-    gestureStatus.textContent = isMobile ? "张手(" + openness.toFixed(2) + ")" : "张手";
+  if (isOpen) {
+    gestureStatus.textContent = isMobile ? "张手(" + curledCount + "|" + openness.toFixed(2) + ")" : "张手";
     state.targetSpread = 1.0;
     state.targetShapeMix = 0.55;
-  } else if (openness < fistThreshold) {
-    gestureStatus.textContent = isMobile ? "握拳(" + openness.toFixed(2) + ")" : "握拳";
+  } else if (isFist) {
+    gestureStatus.textContent = isMobile ? "握拳(" + curledCount + "|" + openness.toFixed(2) + ")" : "握拳";
     state.targetSpread = 0.0;
     state.targetShapeMix = 0.0;
   } else {
-    gestureStatus.textContent = isMobile ? "半开(" + openness.toFixed(2) + ")" : "滑动";
-    state.targetSpread = 0.1;
-    state.targetShapeMix = 0.25;
+    gestureStatus.textContent = isMobile ? "半开(" + curledCount + "|" + openness.toFixed(2) + ")" : "滑动";
+    state.targetSpread = curledCount >= 4 ? 0.0 : 0.3;
+    state.targetShapeMix = curledCount >= 4 ? 0.0 : 0.25;
   }
 
   if (state.lastPalmX !== null) {
