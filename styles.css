@@ -185,12 +185,18 @@ button {
 }
 
 .hud.is-collapsed {
-  width: min(252px, calc(100vw - 48px));
+  width: auto;
+  padding: 10px;
 }
 
 .hud.is-collapsed .brand {
   padding-bottom: 0;
   border-bottom-color: transparent;
+  justify-content: center;
+}
+
+.hud.is-collapsed .brand-mark {
+  display: none;
 }
 
 .hud.is-collapsed .brand-subtitle {

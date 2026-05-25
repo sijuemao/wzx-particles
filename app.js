@@ -353,7 +353,7 @@ function updateHudValues() {
 function updateModeLabels() {
   let labels;
   if (state.interactionMode === "draw") {
-    labels = ["画盘创作", "自定义形状", "实时预览"];
+    labels = ["张手发散", "握拳聚拢", "画盘定形"];
   } else if (state.interactionMode === "mouse") {
     labels = ["移动跟随", "按住发散", "松开聚拢"];
   } else {
@@ -397,8 +397,8 @@ modeButtons.forEach((btn) => {
     const isDraw = mode === "draw";
     if (isDraw) {
       drawPanel.classList.add("is-visible");
-      cameraPanel.classList.add("is-hidden");
-      gestureStatus.textContent = "画盘模式";
+      cameraPanel.classList.remove("is-hidden");
+      gestureStatus.textContent = cameraStatus.textContent === "运行中" ? "等待手势" : "画盘模式";
       requestAnimationFrame(() => {
         initDrawCanvas(!drawTargets);
         rebuildParticles();
@@ -486,7 +486,7 @@ function onHandResults(results) {
   resizeOverlay();
   overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
-  if (state.interactionMode !== "hand") {
+  if (state.interactionMode !== "hand" && state.interactionMode !== "draw") {
     state.targetOffsetX = 0;
     state.targetOffsetY = 0;
     return;
@@ -732,7 +732,8 @@ async function startHands() {
 }
 
 canvas.addEventListener("pointerdown", (event) => {
-  if (state.interactionMode !== "mouse") return;
+  if (state.interactionMode !== "mouse" && state.interactionMode !== "draw") return;
+  if (state.interactionMode === "draw" && drawPanel.contains(event.target)) return;
   state.mouseDown = true;
   state.lastMouseX = event.clientX;
   state.targetSpread = 1.0;
@@ -740,7 +741,7 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 
 window.addEventListener("pointerup", () => {
-  if (state.interactionMode !== "mouse") return;
+  if (state.interactionMode !== "mouse" && state.interactionMode !== "draw") return;
   state.mouseDown = false;
   state.lastMouseX = null;
   state.lastMouseY = null;
@@ -751,7 +752,8 @@ window.addEventListener("pointerup", () => {
 });
 
 window.addEventListener("pointermove", (event) => {
-  if (state.interactionMode !== "mouse") return;
+  if (state.interactionMode !== "mouse" && state.interactionMode !== "draw") return;
+  if (state.interactionMode === "draw" && drawPanel.contains(event.target)) return;
   const mx = (event.clientX / window.innerWidth - 0.5) * 2;
   const my = (0.5 - event.clientY / window.innerHeight) * 2;
   const maxOffset = 1.6;
@@ -776,7 +778,7 @@ window.addEventListener("pointermove", (event) => {
 });
 
 window.addEventListener("pointerleave", () => {
-  if (state.interactionMode !== "mouse") return;
+  if (state.interactionMode !== "mouse" && state.interactionMode !== "draw") return;
   state.mouseDown = false;
   state.lastMouseX = null;
   state.lastMouseY = null;
